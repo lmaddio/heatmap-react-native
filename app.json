@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Network Heatmap",
+    "slug": "heatmap-react-native",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.heatmap.networkspeed",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "This app needs access to your location to track your position and display network speed data on a heatmap.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location to track your position and display network speed data on a heatmap.",
+        "UIBackgroundModes": ["location"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "ACCESS_NETWORK_STATE",
+        "INTERNET"
+      ],
+      "package": "com.heatmap.networkspeed"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to create network speed heatmaps."
+        }
+      ]
+    ]
+  }
+}
