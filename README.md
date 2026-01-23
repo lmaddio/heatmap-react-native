@@ -5,6 +5,8 @@ A React Native application that tracks your location and displays a real-time he
 ![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue)
 ![Expo](https://img.shields.io/badge/Expo-SDK%2054-000020)
 ![React Native](https://img.shields.io/badge/React%20Native-0.76-61DAFB)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)
+![NativeWind](https://img.shields.io/badge/NativeWind-Tailwind%20CSS-38bdf8)
 
 ## Features
 
@@ -66,37 +68,45 @@ expo start
 
 ```
 heatmap-react-native/
-├── App.js                      # Main application entry point
+├── App.tsx                     # Main application entry point
 ├── app.json                    # Expo configuration
 ├── package.json                # Dependencies and scripts
-├── babel.config.js             # Babel configuration
+├── tsconfig.json               # TypeScript configuration
+├── tailwind.config.js          # Tailwind CSS configuration
+├── babel.config.js             # Babel configuration (with NativeWind)
+├── nativewind-env.d.ts         # NativeWind TypeScript types
 ├── assets/                     # App icons and splash screen
 │   ├── icon.png
 │   ├── splash.png
 │   ├── adaptive-icon.png
 │   └── favicon.png
 └── src/
-    ├── App.js                  # Alternative modular App implementation
+    ├── App.tsx                 # Alternative modular App implementation
+    ├── global.css              # Tailwind CSS directives
+    ├── types/
+    │   └── index.ts            # Shared type definitions
     ├── components/
-    │   ├── index.js            # Component exports
-    │   ├── HeatmapOverlay.js   # Map heatmap circles component
-    │   ├── SpeedIndicator.js   # Current speed display
-    │   ├── ControlButtons.js   # Start/Stop tracking buttons
-    │   ├── Legend.js           # Color legend component
-    │   ├── StatsPanel.js       # Statistics display
-    │   ├── DemoModePanel.js    # Demo mode controls (web only)
-    │   ├── CanvasHeatmap.js    # SVG-based canvas heatmap
-    │   ├── MapComponents.js    # Platform map wrapper
-    │   ├── MapComponents.web.js    # Web SVG-based map
-    │   └── MapComponents.native.js # Native react-native-maps
+    │   ├── index.ts            # Component exports
+    │   ├── HeatmapOverlay.tsx  # Map heatmap circles component
+    │   ├── SpeedIndicator.tsx  # Current speed display
+    │   ├── ControlButtons.tsx  # Start/Stop tracking buttons
+    │   ├── Legend.tsx          # Color legend component
+    │   ├── StatsPanel.tsx      # Statistics display
+    │   ├── DemoModePanel.tsx   # Demo mode controls (web only)
+    │   ├── CanvasHeatmap.tsx   # SVG-based canvas heatmap
+    │   ├── SettingsModal.tsx   # Settings modal component
+    │   ├── MapComponents.tsx   # Platform map wrapper
+    │   ├── MapComponents.web.tsx    # Web SVG-based map
+    │   └── MapComponents.native.tsx # Native react-native-maps
     ├── hooks/
-    │   ├── index.js            # Hook exports
-    │   ├── useLocation.js      # Location tracking hook
-    │   ├── useNetworkSpeed.js  # Network speed monitoring hook
-    │   └── useMockLocation.js  # Mock location for web demo
+    │   ├── index.ts            # Hook exports
+    │   ├── useLocation.ts      # Location tracking hook
+    │   ├── useNetworkSpeed.ts  # Network speed monitoring hook
+    │   └── useMockLocation.ts  # Mock location for web demo
     └── utils/
-        ├── heatmapUtils.js     # Utility functions for heatmap
-        └── storage.js          # Data persistence utilities
+        ├── index.ts            # Utility exports
+        ├── heatmapUtils.ts     # Utility functions for heatmap
+        └── storage.ts          # Data persistence utilities
 ```
 
 ## Usage
@@ -129,10 +139,10 @@ The web version includes a **Demo Mode** that simulates GPS walking movement for
 5. Use "⏸ Pause" to stop and "↺ Reset" to clear
 
 ### Demo Mode Configuration:
-You can customize the simulation in `src/hooks/useMockLocation.js`:
+You can customize the simulation in `src/hooks/useMockLocation.ts`:
 
-```javascript
-const MOCK_CONFIG = {
+```typescript
+const MOCK_CONFIG: MockConfig = {
   // Starting location (San Francisco by default)
   defaultLocation: {
     latitude: 37.7749,
@@ -159,20 +169,66 @@ const MOCK_CONFIG = {
 npm run web         # Start web with demo mode
 npm run build:web   # Build for production
 npm run serve:web   # Serve built web app locally
+npm run typecheck   # Run TypeScript type checking
+npm run ts:check    # Alias for typecheck
 ```
 
 ## Configuration
 
+### Tailwind CSS (NativeWind)
+
+This project uses [NativeWind](https://www.nativewind.dev/) to enable Tailwind CSS styling in React Native. The setup includes:
+
+**tailwind.config.js** - Custom theme extensions:
+```javascript
+module.exports = {
+  content: ["./App.{js,jsx,ts,tsx}", "./src/**/*.{js,jsx,ts,tsx}"],
+  presets: [require("nativewind/preset")],  // Required for NativeWind v4
+  theme: {
+    extend: {
+      colors: {
+        'speed-excellent': '#00c800',
+        'speed-good': '#7cfc00',
+        'speed-fair': '#ffff00',
+        'speed-poor': '#ffa500',
+        'speed-very-poor': '#ff0000',
+        'primary': '#007AFF',
+        'success': '#34C759',
+        'danger': '#FF3B30',
+        'warning': '#FF9500',
+        'demo': '#4caf50',
+      },
+    },
+  },
+};
+```
+
+**Usage in components:**
+```tsx
+// Using Tailwind classes with className prop
+<View className="flex-1 bg-white p-4">
+  <Text className="text-lg font-bold text-gray-900">Hello World</Text>
+</View>
+
+// Dynamic classes with template literals
+<TouchableOpacity className={`flex-1 py-3 rounded-xl ${isActive ? 'bg-success' : 'bg-danger'}`}>
+```
+
+**For dynamic color values** (like speed-based colors), use inline styles:
+```tsx
+<View style={{ backgroundColor: getSpeedColor(speed, 1) }} />
+```
+
 ### Network Speed Visualization
 
-The app uses smooth gradient colors based on speed. Customize the gradient stops in `src/utils/heatmapUtils.js`:
+The app uses smooth gradient colors based on speed. Customize the gradient stops in `src/utils/heatmapUtils.ts`:
 
-```javascript
+```typescript
 // Maximum speed for normalization
 export const MAX_SPEED = 100;
 
 // Gradient color stops - customize colors for different speed ranges
-export const GRADIENT_STOPS = [
+export const GRADIENT_STOPS: GradientStop[] = [
   { pos: 0.00, color: { r: 139, g: 0, b: 0 } },      // Dark Red - No signal
   { pos: 0.15, color: { r: 255, g: 69, b: 0 } },     // Orange-Red
   { pos: 0.35, color: { r: 255, g: 165, b: 0 } },    // Orange
@@ -186,9 +242,9 @@ The color system uses a combination of linear and logarithmic scaling to provide
 
 ### Location Update Frequency
 
-Adjust in `App.js` or when using the `useLocation` hook:
+Adjust in `App.tsx` or when using the `useLocation` hook:
 
-```javascript
+```typescript
 const { startTracking } = useLocation({
   timeInterval: 3000,    // Update every 3 seconds
   distanceInterval: 5,   // Or when moved 5 meters
@@ -199,7 +255,7 @@ const { startTracking } = useLocation({
 
 By default, the app estimates speed based on connection type. To enable actual speed tests:
 
-```javascript
+```typescript
 const { speed } = useNetworkSpeed({
   enableSpeedTest: true,
   testInterval: 30000, // Test every 30 seconds
@@ -210,33 +266,33 @@ const { speed } = useNetworkSpeed({
 
 ### useLocation Hook
 
-```javascript
+```typescript
 const {
-  location,           // Current location object
-  error,              // Error message if any
-  isTracking,         // Whether tracking is active
-  hasPermission,      // Whether location permission is granted
-  startTracking,      // Function to start tracking
-  stopTracking,       // Function to stop tracking
-  getCurrentLocation, // Get location once
-} = useLocation(options);
+  location,           // Current location object (AppLocationObject | null)
+  error,              // Error message if any (string | null)
+  isTracking,         // Whether tracking is active (boolean)
+  hasPermission,      // Whether location permission is granted (boolean)
+  startTracking,      // Function to start tracking (() => Promise<boolean>)
+  stopTracking,       // Function to stop tracking (() => void)
+  getCurrentLocation, // Get location once (() => Promise<AppLocationObject | null>)
+} = useLocation(options: UseLocationOptions);
 ```
 
 ### useNetworkSpeed Hook
 
-```javascript
+```typescript
 const {
-  speed,              // Current speed in Mbps
-  networkType,        // 'wifi', 'cellular', etc.
-  isConnected,        // Whether device is online
-  cellularGeneration, // '4g', '5g', etc.
-  measureSpeed,       // Function to measure speed
-} = useNetworkSpeed(options);
+  speed,              // Current speed in Mbps (number)
+  networkType,        // 'wifi', 'cellular', etc. (NetworkType)
+  isConnected,        // Whether device is online (boolean)
+  cellularGeneration, // '4g', '5g', etc. (CellularGeneration)
+  measureSpeed,       // Function to measure speed ((doSpeedTest?: boolean) => Promise<number>)
+} = useNetworkSpeed(options: UseNetworkSpeedOptions);
 ```
 
 ### Utility Functions
 
-```javascript
+```typescript
 import {
   getSpeedColor,        // Get color for speed value
   getSpeedLabel,        // Get label ('Excellent', 'Good', etc.)
@@ -244,6 +300,23 @@ import {
   createDataPoint,      // Create a data point object
   calculateStats,       // Calculate statistics from data points
 } from './src/utils/heatmapUtils';
+```
+
+### Types
+
+All shared types are defined in `src/types/index.ts`:
+
+```typescript
+import type {
+  DataPoint,
+  Coordinates,
+  MapRegion,
+  NetworkType,
+  CellularGeneration,
+  AppSettings,
+  HeatmapGradient,
+  // ... and more
+} from './src/types';
 ```
 
 ## Dependencies
@@ -254,6 +327,11 @@ import {
 - **react-native-maps**: Map component
 - **react-native-svg**: SVG rendering for custom graphics
 - **@react-native-community/netinfo**: Network information
+- **typescript**: TypeScript language support
+- **@types/react**: React type definitions
+- **@types/react-native**: React Native type definitions
+- **nativewind**: Tailwind CSS for React Native
+- **tailwindcss**: Utility-first CSS framework
 
 ## Permissions
 

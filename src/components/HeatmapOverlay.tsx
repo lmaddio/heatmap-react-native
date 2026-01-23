@@ -1,26 +1,35 @@
 import React, { memo, useMemo } from 'react';
 import { Platform } from 'react-native';
 import { Circle, Polyline } from './MapComponents';
-import { getSpeedColor, getHeatmapGradient } from '../utils/heatmapUtils';
+import { getHeatmapGradient } from '../utils/heatmapUtils';
+import type { DataPoint, Coordinates, GradientDataPoint } from '../types';
+
+interface HeatmapOverlayProps {
+  dataPoints: DataPoint[];
+  pathCoordinates: Coordinates[];
+  showPath?: boolean;
+  showGradientPath?: boolean;
+  circleRadius?: number;
+}
 
 /**
  * HeatmapOverlay component - renders gradient heatmap circles and path on the map
  * Uses smooth color gradients to accurately represent network speed variations
  */
-const HeatmapOverlay = memo(({ 
+const HeatmapOverlay: React.FC<HeatmapOverlayProps> = memo(({ 
   dataPoints, 
   pathCoordinates, 
   showPath = true,
-  showGradientPath = true, // Show path colored by speed
+  showGradientPath = true,
   circleRadius = 25,
 }) => {
   // Extract speeds for gradient path coloring
-  const pathSpeeds = useMemo(() => {
+  const pathSpeeds: number[] = useMemo(() => {
     return dataPoints.map(point => point.speed);
   }, [dataPoints]);
 
   // Generate gradient colors for each point
-  const gradientPoints = useMemo(() => {
+  const gradientPoints: GradientDataPoint[] = useMemo(() => {
     return dataPoints.map((point, index) => {
       const gradient = getHeatmapGradient(point.speed);
       return {

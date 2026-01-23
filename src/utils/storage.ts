@@ -1,10 +1,29 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type {
+  DataPoint,
+  Session,
+  AppSettings,
+  ExportedData,
+  GeoJSONFeatureCollection,
+} from '../types';
 
 const STORAGE_KEYS = {
   DATA_POINTS: '@heatmap/data_points',
   SESSIONS: '@heatmap/sessions',
   SETTINGS: '@heatmap/settings',
-};
+} as const;
+
+/**
+ * Get default settings
+ */
+const getDefaultSettings = (): AppSettings => ({
+  trackingInterval: 3000,
+  distanceInterval: 5,
+  enableSpeedTest: false,
+  showPath: true,
+  circleRadius: 20,
+  autoSave: true,
+});
 
 /**
  * Storage utility for persisting heatmap data
@@ -12,9 +31,8 @@ const STORAGE_KEYS = {
 export const storage = {
   /**
    * Save data points to storage
-   * @param {Array} dataPoints - Array of data points
    */
-  async saveDataPoints(dataPoints) {
+  async saveDataPoints(dataPoints: DataPoint[]): Promise<boolean> {
     try {
       const json = JSON.stringify(dataPoints);
       await AsyncStorage.setItem(STORAGE_KEYS.DATA_POINTS, json);
@@ -27,12 +45,11 @@ export const storage = {
 
   /**
    * Load data points from storage
-   * @returns {Array} Array of data points
    */
-  async loadDataPoints() {
+  async loadDataPoints(): Promise<DataPoint[]> {
     try {
       const json = await AsyncStorage.getItem(STORAGE_KEYS.DATA_POINTS);
-      return json ? JSON.parse(json) : [];
+      return json ? (JSON.parse(json) as DataPoint[]) : [];
     } catch (error) {
       console.error('Error loading data points:', error);
       return [];
@@ -42,7 +59,7 @@ export const storage = {
   /**
    * Clear all data points
    */
-  async clearDataPoints() {
+  async clearDataPoints(): Promise<boolean> {
     try {
       await AsyncStorage.removeItem(STORAGE_KEYS.DATA_POINTS);
       return true;
@@ -54,16 +71,16 @@ export const storage = {
 
   /**
    * Save a session with metadata
-   * @param {Object} session - Session object with dataPoints and metadata
    */
-  async saveSession(session) {
+  async saveSession(session: Omit<Session, 'id' | 'createdAt'>): Promise<boolean> {
     try {
       const sessions = await this.loadSessions();
-      sessions.push({
+      const newSession: Session = {
         id: Date.now(),
         createdAt: new Date().toISOString(),
         ...session,
-      });
+      };
+      sessions.push(newSession);
       await AsyncStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
       return true;
     } catch (error) {
@@ -74,12 +91,11 @@ export const storage = {
 
   /**
    * Load all sessions
-   * @returns {Array} Array of sessions
    */
-  async loadSessions() {
+  async loadSessions(): Promise<Session[]> {
     try {
       const json = await AsyncStorage.getItem(STORAGE_KEYS.SESSIONS);
-      return json ? JSON.parse(json) : [];
+      return json ? (JSON.parse(json) as Session[]) : [];
     } catch (error) {
       console.error('Error loading sessions:', error);
       return [];
@@ -88,9 +104,8 @@ export const storage = {
 
   /**
    * Delete a session by ID
-   * @param {number} sessionId - Session ID to delete
    */
-  async deleteSession(sessionId) {
+  async deleteSession(sessionId: number): Promise<boolean> {
     try {
       const sessions = await this.loadSessions();
       const filtered = sessions.filter((s) => s.id !== sessionId);
@@ -104,9 +119,8 @@ export const storage = {
 
   /**
    * Save app settings
-   * @param {Object} settings - Settings object
    */
-  async saveSettings(settings) {
+  async saveSettings(settings: AppSettings): Promise<boolean> {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
       return true;
@@ -118,12 +132,11 @@ export const storage = {
 
   /**
    * Load app settings
-   * @returns {Object} Settings object
    */
-  async loadSettings() {
+  async loadSettings(): Promise<AppSettings> {
     try {
       const json = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
-      return json ? JSON.parse(json) : getDefaultSettings();
+      return json ? (JSON.parse(json) as AppSettings) : getDefaultSettings();
     } catch (error) {
       console.error('Error loading settings:', error);
       return getDefaultSettings();
@@ -132,23 +145,20 @@ export const storage = {
 
   /**
    * Export data as JSON
-   * @param {Array} dataPoints - Data points to export
-   * @returns {string} JSON string
    */
-  exportAsJSON(dataPoints) {
-    return JSON.stringify({
+  exportAsJSON(dataPoints: DataPoint[]): string {
+    const exportData: ExportedData = {
       exportedAt: new Date().toISOString(),
       version: '1.0',
       dataPoints: dataPoints,
-    }, null, 2);
+    };
+    return JSON.stringify(exportData, null, 2);
   },
 
   /**
    * Export data as CSV
-   * @param {Array} dataPoints - Data points to export
-   * @returns {string} CSV string
    */
-  exportAsCSV(dataPoints) {
+  exportAsCSV(dataPoints: DataPoint[]): string {
     const headers = ['id', 'latitude', 'longitude', 'speed', 'timestamp', 'label'];
     const rows = dataPoints.map((point) => [
       point.id,
@@ -167,10 +177,8 @@ export const storage = {
 
   /**
    * Export data as GeoJSON for use with mapping tools
-   * @param {Array} dataPoints - Data points to export
-   * @returns {Object} GeoJSON object
    */
-  exportAsGeoJSON(dataPoints) {
+  exportAsGeoJSON(dataPoints: DataPoint[]): GeoJSONFeatureCollection {
     return {
       type: 'FeatureCollection',
       features: dataPoints.map((point) => ({
@@ -189,17 +197,5 @@ export const storage = {
     };
   },
 };
-
-/**
- * Get default settings
- */
-const getDefaultSettings = () => ({
-  trackingInterval: 3000,
-  distanceInterval: 5,
-  enableSpeedTest: false,
-  showPath: true,
-  circleRadius: 20,
-  autoSave: true,
-});
 
 export default storage;

@@ -1,10 +1,34 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Platform } from 'react-native';
+import type {
+  UseMockLocationOptions,
+  UseMockLocationReturn,
+  Coordinates,
+  MockedLocationObject,
+} from '../types';
+
+interface PoorSignalZone {
+  lat: number;
+  lng: number;
+  radius: number;
+  speedFactor: number;
+}
+
+interface MockConfig {
+  defaultLocation: Coordinates;
+  walkingSpeedMps: number;
+  updateIntervalMs: number;
+  directionChangeChance: number;
+  speedVariation: number;
+  networkSpeedBase: number;
+  networkSpeedVariation: number;
+  poorSignalZones: PoorSignalZone[];
+}
 
 /**
  * Mock location configuration
  */
-const MOCK_CONFIG = {
+const MOCK_CONFIG: MockConfig = {
   // Starting location (default: San Francisco)
   defaultLocation: {
     latitude: 37.7749,
@@ -29,7 +53,7 @@ const MOCK_CONFIG = {
 /**
  * Calculate distance between two points in meters
  */
-const calculateDistance = (lat1, lon1, lat2, lon2) => {
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
   const R = 6371e3;
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
@@ -44,14 +68,14 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 /**
  * Convert meters to degrees (approximate)
  */
-const metersToDegreesLat = (meters) => meters / 111320;
-const metersToDegreesLng = (meters, latitude) => 
+const metersToDegreesLat = (meters: number): number => meters / 111320;
+const metersToDegreesLng = (meters: number, latitude: number): number =>
   meters / (111320 * Math.cos((latitude * Math.PI) / 180));
 
 /**
  * Generate simulated network speed based on location
  */
-const getSimulatedNetworkSpeed = (latitude, longitude) => {
+const getSimulatedNetworkSpeed = (latitude: number, longitude: number): number => {
   let speedFactor = 1;
   
   // Check if in a poor signal zone
@@ -74,7 +98,7 @@ const getSimulatedNetworkSpeed = (latitude, longitude) => {
  * Custom hook for mocking location on web platform
  * Simulates walking movement with realistic speed and direction changes
  */
-export const useMockLocation = (options = {}) => {
+export const useMockLocation = (options: UseMockLocationOptions = {}): UseMockLocationReturn => {
   const {
     enabled = false,
     startLocation = MOCK_CONFIG.defaultLocation,
@@ -83,20 +107,20 @@ export const useMockLocation = (options = {}) => {
     updateInterval = MOCK_CONFIG.updateIntervalMs,
   } = options;
 
-  const [location, setLocation] = useState(null);
+  const [location, setLocation] = useState<MockedLocationObject | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulatedSpeed, setSimulatedSpeed] = useState(0);
   const [totalDistance, setTotalDistance] = useState(0);
-  const [pathHistory, setPathHistory] = useState([]);
+  const [pathHistory, setPathHistory] = useState<Coordinates[]>([]);
   
   // Current movement direction (in radians)
   const directionRef = useRef(Math.random() * 2 * Math.PI);
-  const intervalRef = useRef(null);
-  const lastLocationRef = useRef(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastLocationRef = useRef<MockedLocationObject | null>(null);
 
   // Generate initial location
-  const initializeLocation = useCallback(() => {
-    const initialLocation = {
+  const initializeLocation = useCallback((): MockedLocationObject => {
+    const initialLocation: MockedLocationObject = {
       coords: {
         latitude: startLocation.latitude,
         longitude: startLocation.longitude,
@@ -135,7 +159,7 @@ export const useMockLocation = (options = {}) => {
   }, [startLocation, onLocationUpdate, onSpeedUpdate]);
 
   // Simulate one step of movement
-  const simulateStep = useCallback(() => {
+  const simulateStep = useCallback((): void => {
     if (!lastLocationRef.current) return;
     
     const { latitude, longitude } = lastLocationRef.current.coords;
@@ -163,7 +187,7 @@ export const useMockLocation = (options = {}) => {
     const newLongitude = longitude + deltaLng;
     
     // Create new location object
-    const newLocation = {
+    const newLocation: MockedLocationObject = {
       coords: {
         latitude: newLatitude,
         longitude: newLongitude,
@@ -200,7 +224,7 @@ export const useMockLocation = (options = {}) => {
   }, [updateInterval, onLocationUpdate, onSpeedUpdate]);
 
   // Start simulation
-  const startSimulation = useCallback(() => {
+  const startSimulation = useCallback((): void => {
     if (Platform.OS !== 'web') {
       console.warn('Mock location is only available on web platform');
       return;
@@ -223,7 +247,7 @@ export const useMockLocation = (options = {}) => {
   }, [initializeLocation, simulateStep, updateInterval]);
 
   // Stop simulation
-  const stopSimulation = useCallback(() => {
+  const stopSimulation = useCallback((): void => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -233,7 +257,7 @@ export const useMockLocation = (options = {}) => {
   }, []);
 
   // Reset simulation
-  const resetSimulation = useCallback(() => {
+  const resetSimulation = useCallback((): void => {
     stopSimulation();
     setTotalDistance(0);
     setPathHistory([]);
@@ -243,14 +267,12 @@ export const useMockLocation = (options = {}) => {
   }, [stopSimulation, initializeLocation]);
 
   // Set custom starting location
-  const setStartLocation = useCallback((lat, lng) => {
+  const setStartLocation = useCallback((lat: number, lng: number): void => {
     stopSimulation();
-    const newStart = { latitude: lat, longitude: lng };
-    lastLocationRef.current = null;
     setPathHistory([]);
     setTotalDistance(0);
     
-    const initialLocation = {
+    const initialLocation: MockedLocationObject = {
       coords: {
         latitude: lat,
         longitude: lng,
@@ -285,6 +307,7 @@ export const useMockLocation = (options = {}) => {
         clearInterval(intervalRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
   // Cleanup on unmount

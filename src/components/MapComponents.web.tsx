@@ -1,8 +1,8 @@
 /**
  * Web platform map components using SVG-based implementation
  */
-import React, { forwardRef, useImperativeHandle, useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
+import React, { forwardRef, useImperativeHandle, useState, useEffect } from 'react';
+import { View, Text, LayoutChangeEvent } from 'react-native';
 import Svg, { 
   Circle as SvgCircle, 
   Polyline as SvgPolyline, 
@@ -11,16 +11,29 @@ import Svg, {
   Defs,
   RadialGradient,
   Stop,
-  LinearGradient,
 } from 'react-native-svg';
 import { getHeatmapGradient, getSpeedColorComponents } from '../utils/heatmapUtils';
+import type { MapViewRef, MapRegion, Coordinates } from '../types';
 
 // Constants for coordinate conversion
 const DEFAULT_ZOOM = 15;
 const TILE_SIZE = 256;
 
+interface Dimensions {
+  width: number;
+  height: number;
+}
+
 // Convert lat/lng to pixel coordinates
-const latLngToPixel = (lat, lng, centerLat, centerLng, zoom, width, height) => {
+const latLngToPixel = (
+  lat: number,
+  lng: number,
+  centerLat: number,
+  centerLng: number,
+  zoom: number,
+  width: number,
+  height: number
+): { x: number; y: number } => {
   const scale = Math.pow(2, zoom);
   const latRad = (lat * Math.PI) / 180;
   const centerLatRad = (centerLat * Math.PI) / 180;
@@ -34,18 +47,60 @@ const latLngToPixel = (lat, lng, centerLat, centerLng, zoom, width, height) => {
   return { x, y };
 };
 
+// Props interfaces
+interface MapViewWebProps {
+  style?: object;
+  initialRegion?: MapRegion;
+  showsUserLocation?: boolean;
+  showsMyLocationButton?: boolean;
+  showsCompass?: boolean;
+  children?: React.ReactNode;
+  onRegionChange?: (region: MapRegion) => void;
+}
+
+interface CircleWebProps {
+  center?: Coordinates;
+  radius?: number;
+  fillColor?: string;
+  strokeColor?: string;
+  strokeWidth?: number;
+  speed?: number;
+  _region?: MapRegion;
+  _dimensions?: Dimensions;
+  _zoom?: number;
+  _circleIndex?: number;
+}
+
+interface PolylineWebProps {
+  coordinates?: Coordinates[];
+  strokeColor?: string;
+  strokeWidth?: number;
+  lineDashPattern?: number[];
+  speeds?: number[];
+  _region?: MapRegion;
+  _dimensions?: Dimensions;
+  _zoom?: number;
+}
+
+interface MarkerWebProps {
+  coordinate?: Coordinates;
+  title?: string;
+  description?: string;
+  _region?: MapRegion;
+  _dimensions?: Dimensions;
+  _zoom?: number;
+}
+
 // MapView component for web
-export const MapView = forwardRef(({
+export const MapView = forwardRef<MapViewRef, MapViewWebProps>(({
   style,
   initialRegion,
   showsUserLocation,
-  showsMyLocationButton,
-  showsCompass,
   children,
   onRegionChange,
 }, ref) => {
-  const [region, setRegion] = useState(initialRegion);
-  const [dimensions, setDimensions] = useState({ width: 400, height: 300 });
+  const [region, setRegion] = useState<MapRegion | undefined>(initialRegion);
+  const [dimensions, setDimensions] = useState<Dimensions>({ width: 400, height: 300 });
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
 
   useEffect(() => {
@@ -56,7 +111,7 @@ export const MapView = forwardRef(({
   }, [region]);
 
   useImperativeHandle(ref, () => ({
-    animateToRegion: (newRegion, duration) => {
+    animateToRegion: (newRegion: MapRegion) => {
       setRegion(newRegion);
       if (onRegionChange) {
         onRegionChange(newRegion);
@@ -64,27 +119,28 @@ export const MapView = forwardRef(({
     },
   }));
 
-  const handleLayout = (event) => {
+  const handleLayout = (event: LayoutChangeEvent): void => {
     const { width, height } = event.nativeEvent.layout;
     setDimensions({ width, height });
   };
 
   // Recursively pass region info to all children (including nested ones in Fragments)
-  const cloneWithProps = (element, index = 0) => {
+  const cloneWithProps = (element: React.ReactNode, index: number = 0): React.ReactNode => {
     if (!element) return null;
     if (!React.isValidElement(element)) return element;
     
     // Check if it's a Fragment (React.Fragment or <></>)
-    const isFragment = element.type === React.Fragment || element.type?.toString() === 'Symbol(react.fragment)';
+    const isFragment = element.type === React.Fragment || 
+      (element.type as unknown as { toString: () => string })?.toString?.() === 'Symbol(react.fragment)';
     
     if (isFragment) {
       // For fragments, just process their children
-      const fragmentChildren = element.props.children;
+      const fragmentChildren = (element.props as { children?: React.ReactNode }).children;
       if (fragmentChildren) {
         const processedChildren = React.Children.map(fragmentChildren, (child, childIndex) => 
           cloneWithProps(child, index * 1000 + childIndex)
         );
-        return <React.Fragment key={element.key || index}>{processedChildren}</React.Fragment>;
+        return <React.Fragment key={element.key ?? index}>{processedChildren}</React.Fragment>;
       }
       return null;
     }
@@ -98,7 +154,7 @@ export const MapView = forwardRef(({
     };
     
     // If this element has children that need processing
-    const childrenOfElement = element.props.children;
+    const childrenOfElement = (element.props as { children?: React.ReactNode }).children;
     if (childrenOfElement && React.Children.count(childrenOfElement) > 0) {
       const processedChildren = React.Children.map(childrenOfElement, (child, childIndex) => 
         cloneWithProps(child, index * 1000 + childIndex)
@@ -109,13 +165,13 @@ export const MapView = forwardRef(({
     return React.cloneElement(element, newProps);
   };
 
-  const renderChildren = () => {
+  const renderChildren = (): React.ReactNode => {
     return React.Children.map(children, (child, index) => cloneWithProps(child, index));
   };
 
   return (
-    <View style={[styles.container, style]} onLayout={handleLayout}>
-      <View style={styles.gridBackground}>
+    <View className="bg-neutral-200 overflow-hidden" style={style} onLayout={handleLayout}>
+      <View className="flex-1 bg-neutral-50">
         <Svg width={dimensions.width} height={dimensions.height}>
           {/* Background grid */}
           <G stroke="#E8E8E8" strokeWidth="1">
@@ -157,14 +213,14 @@ export const MapView = forwardRef(({
         </Svg>
       </View>
       
-      <View style={styles.coordsOverlay}>
-        <Text style={styles.coordsText}>
-          📍 {region?.latitude?.toFixed(5) || '0'}, {region?.longitude?.toFixed(5) || '0'}
+      <View className="absolute bottom-2.5 left-2.5 bg-white/95 px-2.5 py-1.5 rounded-md shadow-sm">
+        <Text className="text-xs text-gray-700 font-mono">
+          📍 {region?.latitude?.toFixed(5) ?? '0'}, {region?.longitude?.toFixed(5) ?? '0'}
         </Text>
       </View>
 
-      <View style={styles.webNotice}>
-        <Text style={styles.webNoticeText}>
+      <View className="absolute top-2.5 left-2.5 right-2.5 bg-primary/90 px-3 py-2 rounded-md">
+        <Text className="text-xs text-white text-center">
           🌐 Web Preview - For full map experience, use iOS/Android
         </Text>
       </View>
@@ -172,14 +228,16 @@ export const MapView = forwardRef(({
   );
 });
 
+MapView.displayName = 'MapViewWeb';
+
 // Circle component with gradient support
-export const Circle = ({ 
+export const Circle: React.FC<CircleWebProps> = ({ 
   center, 
-  radius, 
+  radius = 25, 
   fillColor, 
   strokeColor, 
   strokeWidth, 
-  speed, // Optional: network speed for gradient
+  speed,
   _region, 
   _dimensions, 
   _zoom,
@@ -192,12 +250,12 @@ export const Circle = ({
     center.longitude,
     _region.latitude,
     _region.longitude,
-    _zoom || DEFAULT_ZOOM,
+    _zoom ?? DEFAULT_ZOOM,
     _dimensions.width,
     _dimensions.height
   );
   
-  const metersPerPixel = (156543.03392 * Math.cos((_region.latitude * Math.PI) / 180)) / Math.pow(2, _zoom || DEFAULT_ZOOM);
+  const metersPerPixel = (156543.03392 * Math.cos((_region.latitude * Math.PI) / 180)) / Math.pow(2, _zoom ?? DEFAULT_ZOOM);
   const radiusInPixels = Math.max(radius / metersPerPixel, 12);
   
   // Generate gradient ID for this circle
@@ -211,10 +269,10 @@ export const Circle = ({
       <G>
         <Defs>
           <RadialGradient id={gradientId} cx="50%" cy="50%" rx="50%" ry="50%">
-            <Stop offset="0%" stopColor={gradient.inner} stopOpacity="1" />
-            <Stop offset="40%" stopColor={gradient.middle} stopOpacity="0.7" />
-            <Stop offset="70%" stopColor={gradient.outer} stopOpacity="0.4" />
-            <Stop offset="100%" stopColor={gradient.outer} stopOpacity="0" />
+            <Stop offset="0%" stopColor={gradient.inner} stopOpacity={1} />
+            <Stop offset="40%" stopColor={gradient.middle} stopOpacity={0.7} />
+            <Stop offset="70%" stopColor={gradient.outer} stopOpacity={0.4} />
+            <Stop offset="100%" stopColor={gradient.outer} stopOpacity={0} />
           </RadialGradient>
         </Defs>
         {/* Outer glow */}
@@ -244,20 +302,20 @@ export const Circle = ({
       cx={x}
       cy={y}
       r={radiusInPixels}
-      fill={fillColor || 'rgba(0, 0, 255, 0.3)'}
-      stroke={strokeColor || 'transparent'}
-      strokeWidth={strokeWidth || 0}
+      fill={fillColor ?? 'rgba(0, 0, 255, 0.3)'}
+      stroke={strokeColor ?? 'transparent'}
+      strokeWidth={strokeWidth ?? 0}
     />
   );
 };
 
 // Polyline component with gradient path support
-export const Polyline = ({ 
+export const Polyline: React.FC<PolylineWebProps> = ({ 
   coordinates, 
   strokeColor, 
   strokeWidth, 
   lineDashPattern, 
-  speeds, // Optional: array of speeds for gradient path
+  speeds,
   _region, 
   _dimensions, 
   _zoom 
@@ -270,7 +328,7 @@ export const Polyline = ({
       coord.longitude,
       _region.latitude,
       _region.longitude,
-      _zoom || DEFAULT_ZOOM,
+      _zoom ?? DEFAULT_ZOOM,
       _dimensions.width,
       _dimensions.height
     );
@@ -282,7 +340,7 @@ export const Polyline = ({
       <G>
         {screenPoints.slice(0, -1).map((point, index) => {
           const nextPoint = screenPoints[index + 1];
-          const segmentSpeed = speeds[index] || 0;
+          const segmentSpeed = speeds[index] ?? 0;
           const color = getSpeedColorComponents(segmentSpeed);
           
           return (
@@ -291,7 +349,7 @@ export const Polyline = ({
               points={`${point.x},${point.y} ${nextPoint.x},${nextPoint.y}`}
               fill="none"
               stroke={color.hex}
-              strokeWidth={strokeWidth || 4}
+              strokeWidth={strokeWidth ?? 4}
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeOpacity={0.8}
@@ -309,8 +367,8 @@ export const Polyline = ({
     <SvgPolyline
       points={points}
       fill="none"
-      stroke={strokeColor || '#007AFF'}
-      strokeWidth={strokeWidth || 2}
+      stroke={strokeColor ?? '#007AFF'}
+      strokeWidth={strokeWidth ?? 2}
       strokeLinecap="round"
       strokeLinejoin="round"
       strokeDasharray={lineDashPattern ? lineDashPattern.join(',') : undefined}
@@ -319,7 +377,12 @@ export const Polyline = ({
 };
 
 // Marker component
-export const Marker = ({ coordinate, title, description, _region, _dimensions, _zoom }) => {
+export const Marker: React.FC<MarkerWebProps> = ({ 
+  coordinate, 
+  _region, 
+  _dimensions, 
+  _zoom 
+}) => {
   if (!_region || !_dimensions || !coordinate) return null;
   
   const { x, y } = latLngToPixel(
@@ -327,7 +390,7 @@ export const Marker = ({ coordinate, title, description, _region, _dimensions, _
     coordinate.longitude,
     _region.latitude,
     _region.longitude,
-    _zoom || DEFAULT_ZOOM,
+    _zoom ?? DEFAULT_ZOOM,
     _dimensions.width,
     _dimensions.height
   );
@@ -341,49 +404,5 @@ export const Marker = ({ coordinate, title, description, _region, _dimensions, _
     </G>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#F0F0F0',
-    overflow: 'hidden',
-  },
-  gridBackground: {
-    flex: 1,
-    backgroundColor: '#FAFAFA',
-  },
-  coordsOverlay: {
-    position: 'absolute',
-    bottom: 10,
-    left: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  coordsText: {
-    fontSize: 11,
-    color: '#333',
-    fontFamily: 'monospace',
-  },
-  webNotice: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    right: 10,
-    backgroundColor: 'rgba(0, 122, 255, 0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  webNoticeText: {
-    fontSize: 12,
-    color: '#fff',
-    textAlign: 'center',
-  },
-});
 
 export default MapView;

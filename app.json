@@ -7,6 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "scheme": "heatmap",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -49,7 +50,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location to create network speed heatmaps."
         }
-      ]
+      ],
+      "expo-router"
     ]
   }
 }

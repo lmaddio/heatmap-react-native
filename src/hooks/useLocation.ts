@@ -1,30 +1,32 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Location from 'expo-location';
 import { Platform } from 'react-native';
+import type { LocationSubscription } from 'expo-location';
+import type {
+  UseLocationOptions,
+  UseLocationReturn,
+  AppLocationObject,
+} from '../types';
 
 /**
  * Custom hook for handling location tracking
- * @param {Object} options - Configuration options
- * @param {number} options.timeInterval - Time interval between updates (ms)
- * @param {number} options.distanceInterval - Distance interval between updates (meters)
- * @param {Function} options.onLocationUpdate - Callback when location updates
  */
-export const useLocation = (options = {}) => {
+export const useLocation = (options: UseLocationOptions = {}): UseLocationReturn => {
   const {
     timeInterval = 1000,
     distanceInterval = 2,
     onLocationUpdate,
   } = options;
 
-  const [location, setLocation] = useState(null);
-  const [error, setError] = useState(null);
+  const [location, setLocation] = useState<AppLocationObject | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [hasPermission, setHasPermission] = useState(false);
   
-  const subscriptionRef = useRef(null);
+  const subscriptionRef = useRef<LocationSubscription | null>(null);
 
   // Request permissions
-  const requestPermissions = useCallback(async () => {
+  const requestPermissions = useCallback(async (): Promise<boolean> => {
     try {
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
       
@@ -47,14 +49,15 @@ export const useLocation = (options = {}) => {
       setError(null);
       return true;
     } catch (e) {
-      setError('Error requesting permission: ' + e.message);
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      setError('Error requesting permission: ' + errorMessage);
       setHasPermission(false);
       return false;
     }
   }, []);
 
   // Get current location once
-  const getCurrentLocation = useCallback(async () => {
+  const getCurrentLocation = useCallback(async (): Promise<AppLocationObject | null> => {
     try {
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
@@ -62,13 +65,14 @@ export const useLocation = (options = {}) => {
       setLocation(currentLocation);
       return currentLocation;
     } catch (e) {
-      setError('Error getting location: ' + e.message);
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      setError('Error getting location: ' + errorMessage);
       return null;
     }
   }, []);
 
   // Start tracking
-  const startTracking = useCallback(async () => {
+  const startTracking = useCallback(async (): Promise<boolean> => {
     if (!hasPermission) {
       const granted = await requestPermissions();
       if (!granted) return false;
@@ -91,13 +95,14 @@ export const useLocation = (options = {}) => {
       setIsTracking(true);
       return true;
     } catch (e) {
-      setError('Error starting tracking: ' + e.message);
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      setError('Error starting tracking: ' + errorMessage);
       return false;
     }
   }, [hasPermission, timeInterval, distanceInterval, onLocationUpdate, requestPermissions]);
 
   // Stop tracking
-  const stopTracking = useCallback(() => {
+  const stopTracking = useCallback((): void => {
     if (subscriptionRef.current) {
       subscriptionRef.current.remove();
       subscriptionRef.current = null;
@@ -116,6 +121,7 @@ export const useLocation = (options = {}) => {
     return () => {
       stopTracking();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

@@ -2,6 +2,20 @@
  * Utility functions for heatmap generation and color mapping
  */
 
+import type {
+  RGBColor,
+  RGBColorWithHex,
+  GradientStop,
+  HeatmapGradient,
+  LegendItem,
+  DataPoint,
+  DataPointStats,
+  MapRegion,
+  SpeedQuality,
+  Coordinates,
+  AppLocationObject,
+} from '../types';
+
 // Network speed thresholds (in Mbps)
 export const SPEED_THRESHOLDS = {
   EXCELLENT: 50,
@@ -9,14 +23,14 @@ export const SPEED_THRESHOLDS = {
   FAIR: 10,
   POOR: 5,
   VERY_POOR: 1,
-};
+} as const;
 
 // Maximum speed for normalization (Mbps)
 export const MAX_SPEED = 100;
 
 // Gradient color stops for smooth interpolation
 // Format: [position (0-1), { r, g, b }]
-export const GRADIENT_STOPS = [
+export const GRADIENT_STOPS: GradientStop[] = [
   { pos: 0.00, color: { r: 139, g: 0, b: 0 } },      // Dark Red - No signal
   { pos: 0.05, color: { r: 255, g: 0, b: 0 } },      // Red - Very poor
   { pos: 0.15, color: { r: 255, g: 69, b: 0 } },     // Orange-Red
@@ -33,12 +47,8 @@ export const GRADIENT_STOPS = [
 
 /**
  * Interpolate between two colors
- * @param {Object} color1 - First color {r, g, b}
- * @param {Object} color2 - Second color {r, g, b}
- * @param {number} t - Interpolation factor (0-1)
- * @returns {Object} Interpolated color {r, g, b}
  */
-const lerpColor = (color1, color2, t) => {
+const lerpColor = (color1: RGBColor, color2: RGBColor, t: number): RGBColor => {
   return {
     r: Math.round(color1.r + (color2.r - color1.r) * t),
     g: Math.round(color1.g + (color2.g - color1.g) * t),
@@ -49,11 +59,8 @@ const lerpColor = (color1, color2, t) => {
 /**
  * Get smooth gradient color based on network speed
  * Uses multi-stop gradient interpolation for accurate visualization
- * @param {number} speedMbps - Network speed in Mbps
- * @param {number} opacity - Color opacity (0-1)
- * @returns {string} RGBA color string
  */
-export const getSpeedColor = (speedMbps, opacity = 0.6) => {
+export const getSpeedColor = (speedMbps: number, opacity: number = 0.6): string => {
   // Normalize speed to 0-1 range using logarithmic scale for better distribution
   // This gives more color resolution to lower speeds where differences matter more
   const normalizedLinear = Math.min(Math.max(speedMbps, 0) / MAX_SPEED, 1);
@@ -87,16 +94,14 @@ export const getSpeedColor = (speedMbps, opacity = 0.6) => {
 
 /**
  * Get color components as object (for SVG gradients)
- * @param {number} speedMbps - Network speed in Mbps
- * @returns {Object} Color object {r, g, b, hex}
  */
-export const getSpeedColorComponents = (speedMbps) => {
+export const getSpeedColorComponents = (speedMbps: number): RGBColorWithHex => {
   const rgba = getSpeedColor(speedMbps, 1);
   const match = rgba.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
   if (match) {
-    const r = parseInt(match[1]);
-    const g = parseInt(match[2]);
-    const b = parseInt(match[3]);
+    const r = parseInt(match[1], 10);
+    const g = parseInt(match[2], 10);
+    const b = parseInt(match[3], 10);
     const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
     return { r, g, b, hex };
   }
@@ -105,11 +110,9 @@ export const getSpeedColorComponents = (speedMbps) => {
 
 /**
  * Generate gradient colors for legend display
- * @param {number} steps - Number of color steps
- * @returns {Array} Array of {speed, color, label} objects
  */
-export const generateGradientLegend = (steps = 10) => {
-  const legend = [];
+export const generateGradientLegend = (steps: number = 10): LegendItem[] => {
+  const legend: LegendItem[] = [];
   for (let i = 0; i <= steps; i++) {
     const speed = (i / steps) * MAX_SPEED;
     legend.push({
@@ -124,10 +127,8 @@ export const generateGradientLegend = (steps = 10) => {
 /**
  * Get gradient color for radial heatmap effect
  * Returns colors for inner, middle, and outer rings
- * @param {number} speedMbps - Network speed in Mbps
- * @returns {Object} Gradient colors {inner, middle, outer}
  */
-export const getHeatmapGradient = (speedMbps) => {
+export const getHeatmapGradient = (speedMbps: number): HeatmapGradient => {
   const baseColor = getSpeedColorComponents(speedMbps);
   
   return {
@@ -146,10 +147,8 @@ export const getGradientSpeedColor = getSpeedColor;
 
 /**
  * Get speed category label
- * @param {number} speedMbps - Network speed in Mbps
- * @returns {string} Category label
  */
-export const getSpeedLabel = (speedMbps) => {
+export const getSpeedLabel = (speedMbps: number): SpeedQuality => {
   if (speedMbps >= SPEED_THRESHOLDS.EXCELLENT) return 'Excellent';
   if (speedMbps >= SPEED_THRESHOLDS.GOOD) return 'Good';
   if (speedMbps >= SPEED_THRESHOLDS.FAIR) return 'Fair';
@@ -160,13 +159,14 @@ export const getSpeedLabel = (speedMbps) => {
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
- * @param {number} lat1 - Latitude of first point
- * @param {number} lon1 - Longitude of first point
- * @param {number} lat2 - Latitude of second point
- * @param {number} lon2 - Longitude of second point
- * @returns {number} Distance in meters
+ * @returns Distance in meters
  */
-export const calculateDistance = (lat1, lon1, lat2, lon2) => {
+export const calculateDistance = (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number => {
   const R = 6371e3; // Earth's radius in meters
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
@@ -183,14 +183,14 @@ export const calculateDistance = (lat1, lon1, lat2, lon2) => {
 
 /**
  * Convert geographic coordinates to screen coordinates
- * @param {number} latitude - Latitude
- * @param {number} longitude - Longitude
- * @param {Object} region - Map region (latitudeDelta, longitudeDelta, etc.)
- * @param {number} width - Screen width
- * @param {number} height - Screen height
- * @returns {Object} Screen coordinates {x, y}
  */
-export const geoToScreen = (latitude, longitude, region, width, height) => {
+export const geoToScreen = (
+  latitude: number,
+  longitude: number,
+  region: MapRegion,
+  width: number,
+  height: number
+): { x: number; y: number } => {
   const x = ((longitude - (region.longitude - region.longitudeDelta / 2)) / region.longitudeDelta) * width;
   const y = ((region.latitude + region.latitudeDelta / 2 - latitude) / region.latitudeDelta) * height;
   return { x, y };
@@ -198,9 +198,8 @@ export const geoToScreen = (latitude, longitude, region, width, height) => {
 
 /**
  * Generate heatmap gradient stops for SVG
- * @returns {Array} Array of gradient stops
  */
-export const generateHeatmapGradient = () => {
+export const generateHeatmapGradient = (): Array<{ offset: string; color: string; opacity: number }> => {
   return [
     { offset: '0%', color: 'rgb(255, 0, 0)', opacity: 0.8 },
     { offset: '25%', color: 'rgb(255, 165, 0)', opacity: 0.7 },
@@ -212,11 +211,8 @@ export const generateHeatmapGradient = () => {
 
 /**
  * Create data point object
- * @param {Object} location - Location data
- * @param {number} speed - Network speed in Mbps
- * @returns {Object} Data point object
  */
-export const createDataPoint = (location, speed) => {
+export const createDataPoint = (location: AppLocationObject, speed: number): DataPoint => {
   const gradient = getHeatmapGradient(speed);
   return {
     id: Date.now() + Math.random(),
@@ -232,10 +228,8 @@ export const createDataPoint = (location, speed) => {
 
 /**
  * Calculate average speed from data points
- * @param {Array} dataPoints - Array of data points
- * @returns {number} Average speed in Mbps
  */
-export const calculateAverageSpeed = (dataPoints) => {
+export const calculateAverageSpeed = (dataPoints: DataPoint[]): number => {
   if (dataPoints.length === 0) return 0;
   const sum = dataPoints.reduce((acc, point) => acc + point.speed, 0);
   return sum / dataPoints.length;
@@ -243,10 +237,8 @@ export const calculateAverageSpeed = (dataPoints) => {
 
 /**
  * Get statistics from data points
- * @param {Array} dataPoints - Array of data points
- * @returns {Object} Statistics object
  */
-export const calculateStats = (dataPoints) => {
+export const calculateStats = (dataPoints: DataPoint[]): DataPointStats => {
   if (dataPoints.length === 0) {
     return {
       count: 0,

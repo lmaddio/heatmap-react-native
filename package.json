@@ -1,7 +1,7 @@
 {
   "name": "heatmap-react-native",
   "version": "1.0.0",
-  "main": "expo/AppEntry.js",
+  "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -11,25 +11,34 @@
     "build:web": "expo export --platform web",
     "serve:web": "npx serve dist",
     "lint": "eslint .",
-    "test": "jest"
+    "test": "jest",
+    "typecheck": "tsc --noEmit",
+    "ts:check": "tsc --noEmit"
   },
   "dependencies": {
-    "@expo/metro-runtime": "~5.0.5",
-    "@react-native-async-storage/async-storage": "~2.1.2",
+    "@expo/metro-runtime": "~6.1.2",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "~11.4.1",
-    "expo": "~54.0.31",
-    "expo-location": "~18.0.10",
-    "expo-status-bar": "~2.2.3",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "react-native": "0.76.9",
+    "expo": "~54.0.32",
+    "expo-constants": "^18.0.13",
+    "expo-linking": "^8.0.11",
+    "expo-location": "~19.0.8",
+    "expo-router": "^6.0.22",
+    "expo-status-bar": "~3.0.9",
+    "nativewind": "^4.2.1",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
     "react-native-maps": "~1.20.1",
-    "react-native-svg": "~15.11.2",
-    "react-native-web": "~0.19.13"
+    "react-native-svg": "15.12.1",
+    "react-native-web": "^0.21.0",
+    "tailwindcss": "^3.3.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",
-    "@types/react": "~18.3.0"
+    "@types/react": "~19.1.10",
+    "@types/react-native": "^0.72.8",
+    "typescript": "^5.9.3"
   },
   "private": true
 }

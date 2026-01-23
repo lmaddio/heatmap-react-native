@@ -9,11 +9,12 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import './src/global.css';
 import { StatusBar } from 'expo-status-bar';
 import * as Location from 'expo-location';
-import NetInfo from '@react-native-community/netinfo';
+import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 
-// Platform-specific map components (uses .web.js or .native.js automatically)
+// Platform-specific map components (uses .web.tsx or .native.tsx automatically)
 import { MapView, Circle, Polyline, Marker } from './src/components/MapComponents';
 import DemoModePanel from './src/components/DemoModePanel';
 
@@ -24,6 +25,17 @@ import {
   SPEED_THRESHOLDS 
 } from './src/utils/heatmapUtils';
 
+import type {
+  DataPoint,
+  Coordinates,
+  AppLocationObject,
+  MockedLocationObject,
+  NetworkZone,
+  MapViewRef,
+  HeatmapGradient,
+  NetworkType,
+} from './src/types';
+
 // Check if running in demo/test mode on web
 const IS_WEB = Platform.OS === 'web';
 const DEMO_MODE_AVAILABLE = IS_WEB;
@@ -31,7 +43,7 @@ const DEMO_MODE_AVAILABLE = IS_WEB;
 const { width, height } = Dimensions.get('window');
 
 // Multiple test endpoints to avoid 429/409 rate limiting
-const TEST_ENDPOINTS = [
+const TEST_ENDPOINTS: string[] = [
   'https://www.google.com/generate_204',
   'https://www.gstatic.com/generate_204',
   'https://connectivitycheck.gstatic.com/generate_204',
@@ -45,14 +57,14 @@ const TEST_ENDPOINTS = [
 let currentEndpointIndex = 0;
 
 // Get next test endpoint (round-robin)
-const getNextEndpoint = () => {
+const getNextEndpoint = (): string => {
   const endpoint = TEST_ENDPOINTS[currentEndpointIndex];
   currentEndpointIndex = (currentEndpointIndex + 1) % TEST_ENDPOINTS.length;
   return endpoint;
 };
 
 // Estimate network speed based on connection type and details
-const estimateNetworkSpeed = async (netInfoState) => {
+const estimateNetworkSpeed = async (netInfoState: NetInfoState): Promise<number> => {
   if (!netInfoState.isConnected) {
     return 0;
   }
@@ -63,12 +75,12 @@ const estimateNetworkSpeed = async (netInfoState) => {
   switch (type) {
     case 'wifi':
       baseSpeed = 50;
-      if (details && details.strength) {
+      if (details && 'strength' in details && typeof details.strength === 'number') {
         baseSpeed = (details.strength / 100) * 100;
       }
       break;
     case 'cellular':
-      if (details && details.cellularGeneration) {
+      if (details && 'cellularGeneration' in details && details.cellularGeneration) {
         switch (details.cellularGeneration) {
           case '5g':
             baseSpeed = 100;
@@ -104,7 +116,7 @@ const estimateNetworkSpeed = async (netInfoState) => {
 };
 
 // Perform actual speed test using rotating endpoints
-const performSpeedTest = async () => {
+const performSpeedTest = async (): Promise<number | null> => {
   const endpoint = getNextEndpoint();
   
   try {
@@ -134,71 +146,79 @@ const performSpeedTest = async () => {
     if (latency < 1200) return 4;
     return 1;
   } catch (error) {
-    console.log(`Speed test failed for ${endpoint}:`, error.message);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.log(`Speed test failed for ${endpoint}:`, errorMessage);
     return null;
   }
 };
 
-export default function App() {
-  const [location, setLocation] = useState(null);
-  const [errorMsg, setErrorMsg] = useState(null);
+// Demo mode configuration
+interface DemoConfig {
+  startLocation: Coordinates;
+  walkingSpeedMps: number;
+  updateIntervalMs: number;
+  directionChangeChance: number;
+  networkZones: NetworkZone[];
+}
+
+const DEMO_CONFIG: DemoConfig = {
+  startLocation: { latitude: 37.7749, longitude: -122.4194 },
+  walkingSpeedMps: 1.4,
+  updateIntervalMs: 1000,
+  directionChangeChance: 0.15,
+  
+  // Network zones with different signal qualities
+  networkZones: [
+    // Dead zones (no signal) - tunnels, basements
+    { lat: 37.7760, lng: -122.4180, radius: 0.0008, type: 'dead', baseSpeed: 0 },
+    { lat: 37.7730, lng: -122.4220, radius: 0.0006, type: 'dead', baseSpeed: 0 },
+    
+    // Poor signal zones - buildings blocking signal
+    { lat: 37.7755, lng: -122.4175, radius: 0.0015, type: 'poor', baseSpeed: 3 },
+    { lat: 37.7740, lng: -122.4210, radius: 0.0018, type: 'poor', baseSpeed: 5 },
+    { lat: 37.7765, lng: -122.4200, radius: 0.0012, type: 'poor', baseSpeed: 4 },
+    { lat: 37.7735, lng: -122.4185, radius: 0.001, type: 'poor', baseSpeed: 6 },
+    
+    // Fair signal zones - moderate coverage
+    { lat: 37.7752, lng: -122.4190, radius: 0.002, type: 'fair', baseSpeed: 15 },
+    { lat: 37.7745, lng: -122.4205, radius: 0.0015, type: 'fair', baseSpeed: 18 },
+    { lat: 37.7758, lng: -122.4215, radius: 0.0012, type: 'fair', baseSpeed: 12 },
+    
+    // Good signal zones - near cell towers
+    { lat: 37.7748, lng: -122.4195, radius: 0.002, type: 'good', baseSpeed: 40 },
+    { lat: 37.7742, lng: -122.4180, radius: 0.0018, type: 'good', baseSpeed: 45 },
+    
+    // Excellent signal zones - 5G hotspots
+    { lat: 37.7750, lng: -122.4188, radius: 0.001, type: 'excellent', baseSpeed: 85 },
+    { lat: 37.7738, lng: -122.4198, radius: 0.0008, type: 'excellent', baseSpeed: 95 },
+  ],
+};
+
+export default function App(): React.JSX.Element {
+  const [location, setLocation] = useState<AppLocationObject | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [networkSpeed, setNetworkSpeed] = useState(0);
-  const [networkType, setNetworkType] = useState('unknown');
-  const [dataPoints, setDataPoints] = useState([]);
-  const [pathCoordinates, setPathCoordinates] = useState([]);
+  const [networkType, setNetworkType] = useState<NetworkType>('unknown');
+  const [dataPoints, setDataPoints] = useState<DataPoint[]>([]);
+  const [pathCoordinates, setPathCoordinates] = useState<Coordinates[]>([]);
   const [demoModeEnabled, setDemoModeEnabled] = useState(IS_WEB);
-  
-  const mapRef = useRef(null);
-  const locationSubscription = useRef(null);
-  const netInfoSubscription = useRef(null);
-  const demoIntervalRef = useRef(null);
+
+  const mapRef = useRef<MapViewRef | null>(null);
+  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const netInfoSubscription = useRef<(() => void) | null>(null);
+  const demoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Demo simulation state
   const [isSimulating, setIsSimulating] = useState(false);
   const [totalDistance, setTotalDistance] = useState(0);
   const [simulatedSpeed, setSimulatedSpeed] = useState(35);
   const directionRef = useRef(Math.random() * 2 * Math.PI);
-  const lastDemoLocationRef = useRef(null);
-
-  // Demo mode configuration with diverse network conditions
-  const DEMO_CONFIG = {
-    startLocation: { latitude: 37.7749, longitude: -122.4194 },
-    walkingSpeedMps: 1.4,
-    updateIntervalMs: 1000,
-    directionChangeChance: 0.15,
-    
-    // Network zones with different signal qualities
-    // type: 'poor' | 'fair' | 'good' | 'excellent' | 'dead'
-    networkZones: [
-      // Dead zones (no signal) - tunnels, basements
-      { lat: 37.7760, lng: -122.4180, radius: 0.0008, type: 'dead', baseSpeed: 0 },
-      { lat: 37.7730, lng: -122.4220, radius: 0.0006, type: 'dead', baseSpeed: 0 },
-      
-      // Poor signal zones - buildings blocking signal
-      { lat: 37.7755, lng: -122.4175, radius: 0.0015, type: 'poor', baseSpeed: 3 },
-      { lat: 37.7740, lng: -122.4210, radius: 0.0018, type: 'poor', baseSpeed: 5 },
-      { lat: 37.7765, lng: -122.4200, radius: 0.0012, type: 'poor', baseSpeed: 4 },
-      { lat: 37.7735, lng: -122.4185, radius: 0.001, type: 'poor', baseSpeed: 6 },
-      
-      // Fair signal zones - moderate coverage
-      { lat: 37.7752, lng: -122.4190, radius: 0.002, type: 'fair', baseSpeed: 15 },
-      { lat: 37.7745, lng: -122.4205, radius: 0.0015, type: 'fair', baseSpeed: 18 },
-      { lat: 37.7758, lng: -122.4215, radius: 0.0012, type: 'fair', baseSpeed: 12 },
-      
-      // Good signal zones - near cell towers
-      { lat: 37.7748, lng: -122.4195, radius: 0.002, type: 'good', baseSpeed: 40 },
-      { lat: 37.7742, lng: -122.4180, radius: 0.0018, type: 'good', baseSpeed: 45 },
-      
-      // Excellent signal zones - 5G hotspots
-      { lat: 37.7750, lng: -122.4188, radius: 0.001, type: 'excellent', baseSpeed: 85 },
-      { lat: 37.7738, lng: -122.4198, radius: 0.0008, type: 'excellent', baseSpeed: 95 },
-    ],
-  };
+  const lastDemoLocationRef = useRef<Coordinates | null>(null);
 
   // Calculate simulated network speed based on location with realistic variations
-  const getSimulatedNetworkSpeed = useCallback((lat, lng) => {
-    let bestZone = null;
+  const getSimulatedNetworkSpeed = useCallback((lat: number, lng: number): number => {
+    let bestZone: NetworkZone | null = null;
     let minDistance = Infinity;
     
     // Find the closest zone
@@ -215,8 +235,8 @@ export default function App() {
       }
     }
     
-    let baseSpeed;
-    let variationRange;
+    let baseSpeed: number;
+    let variationRange: number;
     
     if (bestZone) {
       // Inside a specific zone
@@ -225,10 +245,10 @@ export default function App() {
       // Variation depends on zone type
       switch (bestZone.type) {
         case 'dead':
-          variationRange = 0.5; // Almost no signal
+          variationRange = 0.5;
           break;
         case 'poor':
-          variationRange = 4; // Unstable connection
+          variationRange = 4;
           break;
         case 'fair':
           variationRange = 8;
@@ -244,41 +264,35 @@ export default function App() {
       }
     } else {
       // Default outdoor coverage - mix of conditions
-      // Use perlin-like noise based on position for smooth transitions
       const noiseX = Math.sin(lat * 10000) * Math.cos(lng * 10000);
       const noiseY = Math.cos(lat * 8000) * Math.sin(lng * 12000);
-      const noise = (noiseX + noiseY + 2) / 4; // Normalize to 0-1
+      const noise = (noiseX + noiseY + 2) / 4;
       
-      // Base speed varies from 10 to 60 based on "location noise"
       baseSpeed = 10 + noise * 50;
       variationRange = 15;
     }
     
-    // Add random fluctuation (simulates real-world signal instability)
+    // Add random fluctuation
     const fluctuation = (Math.random() - 0.5) * 2 * variationRange;
     
-    // Add time-based variation (simulates network congestion)
+    // Add time-based variation
     const timeVariation = Math.sin(Date.now() / 5000) * 5;
     
-    // Calculate final speed
     let finalSpeed = baseSpeed + fluctuation + timeVariation;
-    
-    // Clamp to realistic range
     finalSpeed = Math.max(0, Math.min(100, finalSpeed));
     
-    // Occasionally spike or drop (simulates handoffs, interference)
+    // Occasional spike or drop
     if (Math.random() < 0.05) {
-      // 5% chance of significant change
       finalSpeed = Math.random() < 0.5 
-        ? finalSpeed * 0.3  // Drop
-        : Math.min(100, finalSpeed * 1.5); // Spike
+        ? finalSpeed * 0.3
+        : Math.min(100, finalSpeed * 1.5);
     }
     
-    return Math.round(finalSpeed * 10) / 10; // Round to 1 decimal
+    return Math.round(finalSpeed * 10) / 10;
   }, []);
 
   // Perform one step of demo simulation
-  const demoStep = useCallback(() => {
+  const demoStep = useCallback((): void => {
     const currentLoc = lastDemoLocationRef.current;
     if (!currentLoc) return;
 
@@ -301,7 +315,7 @@ export default function App() {
     const newLng = currentLoc.longitude + deltaLng;
 
     // Update location
-    const newLocation = {
+    const newLocation: MockedLocationObject = {
       coords: {
         latitude: newLat,
         longitude: newLng,
@@ -326,7 +340,7 @@ export default function App() {
 
     // Add data point
     const gradient = getHeatmapGradient(newSpeed);
-    const newPoint = {
+    const newPoint: DataPoint = {
       id: Date.now() + Math.random(),
       latitude: newLat,
       longitude: newLng,
@@ -351,7 +365,7 @@ export default function App() {
   }, [getSimulatedNetworkSpeed]);
 
   // Start demo simulation
-  const startDemoSimulation = useCallback(() => {
+  const startDemoSimulation = useCallback((): void => {
     if (!IS_WEB) return;
 
     // Initialize starting location if needed
@@ -361,7 +375,7 @@ export default function App() {
         longitude: DEMO_CONFIG.startLocation.longitude,
       };
       
-      const initialLocation = {
+      const initialLocation: MockedLocationObject = {
         coords: {
           latitude: DEMO_CONFIG.startLocation.latitude,
           longitude: DEMO_CONFIG.startLocation.longitude,
@@ -412,7 +426,7 @@ export default function App() {
   }, [demoStep, getSimulatedNetworkSpeed]);
 
   // Stop demo simulation
-  const stopDemoSimulation = useCallback(() => {
+  const stopDemoSimulation = useCallback((): void => {
     if (demoIntervalRef.current) {
       clearInterval(demoIntervalRef.current);
       demoIntervalRef.current = null;
@@ -423,7 +437,7 @@ export default function App() {
   }, []);
 
   // Reset demo simulation
-  const resetDemoSimulation = useCallback(() => {
+  const resetDemoSimulation = useCallback((): void => {
     stopDemoSimulation();
     lastDemoLocationRef.current = null;
     directionRef.current = Math.random() * 2 * Math.PI;
@@ -433,7 +447,7 @@ export default function App() {
     setSimulatedSpeed(35);
     
     // Reset to starting location
-    const initialLocation = {
+    const initialLocation: MockedLocationObject = {
       coords: {
         latitude: DEMO_CONFIG.startLocation.latitude,
         longitude: DEMO_CONFIG.startLocation.longitude,
@@ -453,7 +467,7 @@ export default function App() {
   }, [stopDemoSimulation]);
 
   // Request location permissions
-  const requestPermissions = async () => {
+  const requestPermissions = async (): Promise<boolean> => {
     try {
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
       
@@ -472,13 +486,14 @@ export default function App() {
 
       return true;
     } catch (error) {
-      setErrorMsg('Error requesting permissions: ' + error.message);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setErrorMsg('Error requesting permissions: ' + errorMessage);
       return false;
     }
   };
 
   // Get current location once
-  const getCurrentLocation = async () => {
+  const getCurrentLocation = async (): Promise<Location.LocationObject | null> => {
     try {
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
@@ -486,16 +501,17 @@ export default function App() {
       setLocation(currentLocation);
       return currentLocation;
     } catch (error) {
-      setErrorMsg('Error getting location: ' + error.message);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setErrorMsg('Error getting location: ' + errorMessage);
       return null;
     }
   };
 
   // Measure network speed with actual speed test
-  const measureNetworkSpeed = useCallback(async () => {
+  const measureNetworkSpeed = useCallback(async (): Promise<number> => {
     try {
       const netInfo = await NetInfo.fetch();
-      setNetworkType(netInfo.type);
+      setNetworkType(netInfo.type as NetworkType);
       
       // Get estimated speed based on connection type
       let estimatedSpeed = await estimateNetworkSpeed(netInfo);
@@ -504,7 +520,7 @@ export default function App() {
       const testedSpeed = await performSpeedTest();
       
       // Blend results (favor tested speed when available)
-      let finalSpeed;
+      let finalSpeed: number;
       if (testedSpeed !== null) {
         finalSpeed = (testedSpeed * 0.7) + (estimatedSpeed * 0.3);
       } else {
@@ -520,9 +536,9 @@ export default function App() {
   }, []);
 
   // Add a data point with location and network speed
-  const addDataPoint = useCallback((locationData, speed) => {
+  const addDataPoint = useCallback((locationData: AppLocationObject, speed: number): void => {
     const gradient = getHeatmapGradient(speed);
-    const newPoint = {
+    const newPoint: DataPoint = {
       id: Date.now(),
       latitude: locationData.coords.latitude,
       longitude: locationData.coords.longitude,
@@ -543,7 +559,7 @@ export default function App() {
   }, []);
 
   // Start tracking location
-  const startTracking = async () => {
+  const startTracking = async (): Promise<void> => {
     // On web with demo mode, use mock location
     if (IS_WEB && demoModeEnabled) {
       startDemoSimulation();
@@ -583,8 +599,8 @@ export default function App() {
     locationSubscription.current = await Location.watchPositionAsync(
       {
         accuracy: Location.Accuracy.High,
-        timeInterval: 1000, // Update every 1 second
-        distanceInterval: 2, // Or when moved 2 meters
+        timeInterval: 1000,
+        distanceInterval: 2,
       },
       async (newLocation) => {
         setLocation(newLocation);
@@ -607,7 +623,7 @@ export default function App() {
 
     // Subscribe to network state changes
     netInfoSubscription.current = NetInfo.addEventListener(async (state) => {
-      setNetworkType(state.type);
+      setNetworkType(state.type as NetworkType);
       const speed = await estimateNetworkSpeed(state);
       setNetworkSpeed(speed);
     });
@@ -616,7 +632,7 @@ export default function App() {
   };
 
   // Stop tracking location
-  const stopTracking = () => {
+  const stopTracking = (): void => {
     // Stop demo mode simulation if active
     if (IS_WEB && demoModeEnabled) {
       stopDemoSimulation();
@@ -644,7 +660,7 @@ export default function App() {
   }, []);
 
   // Clear all data points
-  const clearData = () => {
+  const clearData = (): void => {
     Alert.alert(
       'Clear Data',
       'Are you sure you want to clear all heatmap data?',
@@ -707,19 +723,20 @@ export default function App() {
       }
       stopTracking();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Render loading state
   if (!location && !errorMsg) {
     return (
-      <View style={styles.centerContainer}>
+      <View className="flex-1 justify-center items-center bg-white p-5">
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>
+        <Text className="mt-2.5 text-base text-gray-500">
           {demoModeEnabled ? 'Initializing demo...' : 'Getting your location...'}
         </Text>
         {IS_WEB && !demoModeEnabled && (
           <TouchableOpacity 
-            style={[styles.retryButton, { marginTop: 20, backgroundColor: '#4caf50' }]} 
+            className="mt-5 bg-demo px-8 py-3 rounded-lg"
             onPress={() => {
               setDemoModeEnabled(true);
               setLocation({
@@ -729,7 +746,7 @@ export default function App() {
               });
             }}
           >
-            <Text style={styles.retryButtonText}>🧪 Use Demo Mode</Text>
+            <Text className="text-white text-base font-semibold">🧪 Use Demo Mode</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -739,14 +756,14 @@ export default function App() {
   // Render error state
   if (errorMsg) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>{errorMsg}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={requestPermissions}>
-          <Text style={styles.retryButtonText}>Retry</Text>
+      <View className="flex-1 justify-center items-center bg-white p-5">
+        <Text className="text-base text-danger text-center mb-5">{errorMsg}</Text>
+        <TouchableOpacity className="bg-primary px-8 py-3 rounded-lg" onPress={requestPermissions}>
+          <Text className="text-white text-base font-semibold">Retry</Text>
         </TouchableOpacity>
         {IS_WEB && (
           <TouchableOpacity 
-            style={[styles.retryButton, { marginTop: 10, backgroundColor: '#4caf50' }]} 
+            className="mt-2.5 bg-demo px-8 py-3 rounded-lg"
             onPress={() => {
               setDemoModeEnabled(true);
               setErrorMsg(null);
@@ -757,7 +774,7 @@ export default function App() {
               });
             }}
           >
-            <Text style={styles.retryButtonText}>🧪 Use Demo Mode</Text>
+            <Text className="text-white text-base font-semibold">🧪 Use Demo Mode</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -765,13 +782,13 @@ export default function App() {
   }
 
   return (
-    <View style={styles.container}>
+    <View className="flex-1 bg-white">
       <StatusBar style="dark" />
       
       {/* Map with heatmap overlay */}
       <MapView
         ref={mapRef}
-        style={styles.map}
+        style={{ width, height: height * 0.45 }}
         initialRegion={{
           latitude: location?.coords?.latitude ?? 37.7749,
           longitude: location?.coords?.longitude ?? -122.4194,
@@ -802,7 +819,7 @@ export default function App() {
                 longitude: point.longitude,
               }}
               radius={50}
-              fillColor={point.gradient?.outer || getSpeedColor(point.speed, 0.15)}
+              fillColor={point.gradient?.outer ?? getSpeedColor(point.speed, 0.15)}
               strokeColor="transparent"
               strokeWidth={0}
             />
@@ -813,7 +830,7 @@ export default function App() {
                 longitude: point.longitude,
               }}
               radius={32}
-              fillColor={point.gradient?.middle || getSpeedColor(point.speed, 0.4)}
+              fillColor={point.gradient?.middle ?? getSpeedColor(point.speed, 0.4)}
               strokeColor="transparent"
               strokeWidth={0}
             />
@@ -824,7 +841,7 @@ export default function App() {
                 longitude: point.longitude,
               }}
               radius={15}
-              fillColor={point.gradient?.inner || getSpeedColor(point.speed, 0.9)}
+              fillColor={point.gradient?.inner ?? getSpeedColor(point.speed, 0.9)}
               strokeColor="#ffffff"
               strokeWidth={1}
             />
@@ -845,41 +862,54 @@ export default function App() {
       </MapView>
 
       {/* Info Panel with Gradient Speed Indicator */}
-      <View style={styles.infoPanel}>
-        <View style={styles.speedContainer}>
+      <View className="bg-white p-4 border-b border-neutral-200">
+        <View className="flex-row items-center mb-2.5">
           {/* Gradient speed indicator */}
-          <View style={styles.speedIndicatorContainer}>
-            <View style={[styles.speedIndicatorOuter, { backgroundColor: getSpeedColor(networkSpeed, 0.2) }]}>
-              <View style={[styles.speedIndicatorMiddle, { backgroundColor: getSpeedColor(networkSpeed, 0.5) }]}>
-                <View style={[styles.speedIndicatorInner, { backgroundColor: getSpeedColor(networkSpeed, 1) }]} />
+          <View className="mr-4">
+            <View 
+              className="w-18 h-18 rounded-full justify-center items-center"
+              style={{ backgroundColor: getSpeedColor(networkSpeed, 0.2) }}
+            >
+              <View 
+                className="w-12 h-12 rounded-full justify-center items-center"
+                style={{ backgroundColor: getSpeedColor(networkSpeed, 0.5) }}
+              >
+                <View 
+                  className="w-8 h-8 rounded-full border-2 border-white/70"
+                  style={{ backgroundColor: getSpeedColor(networkSpeed, 1) }}
+                />
               </View>
             </View>
           </View>
-          <View style={styles.speedInfo}>
-            <Text style={styles.speedValue}>{networkSpeed.toFixed(1)} <Text style={styles.speedUnit}>Mbps</Text></Text>
-            <Text style={[styles.speedLabel, { color: getSpeedColor(networkSpeed, 1) }]}>{getSpeedLabel(networkSpeed)}</Text>
-            <Text style={styles.networkType}>{networkType.toUpperCase()}</Text>
+          <View className="flex-1">
+            <Text className="text-3xl font-bold text-black">
+              {networkSpeed.toFixed(1)} <Text className="text-sm font-normal text-gray-500">Mbps</Text>
+            </Text>
+            <Text className="text-base font-semibold" style={{ color: getSpeedColor(networkSpeed, 1) }}>
+              {getSpeedLabel(networkSpeed)}
+            </Text>
+            <Text className="text-xs text-gray-400 mt-0.5">{networkType.toUpperCase()}</Text>
           </View>
         </View>
         {/* Mini gradient bar showing current speed position */}
-        <View style={styles.miniGradientContainer}>
-          <View style={styles.miniGradientBar}>
+        <View className="my-2 relative">
+          <View className="flex-row h-1.5 rounded-sm overflow-hidden">
             {Array.from({ length: 20 }).map((_, i) => (
               <View 
                 key={i} 
-                style={[
-                  styles.miniGradientSegment, 
-                  { backgroundColor: getSpeedColor((i / 19) * 100, 1) }
-                ]} 
+                style={[styles.miniGradientSegment, { backgroundColor: getSpeedColor((i / 19) * 100, 1) }]} 
               />
             ))}
           </View>
-          <View style={[styles.speedMarker, { left: `${Math.min(networkSpeed, 100)}%` }]} />
+          <View 
+            className="absolute -top-0.5 w-1 h-2.5 bg-black rounded-sm border border-white -ml-0.5"
+            style={{ left: `${Math.min(networkSpeed, 100)}%` as unknown as number }}
+          />
         </View>
-        <View style={styles.statsContainer}>
-          <Text style={styles.statsText}>📍 Data Points: {dataPoints.length}</Text>
+        <View className="flex-row justify-between items-center">
+          <Text className="text-xs text-gray-500">📍 Data Points: {dataPoints.length}</Text>
           {demoModeEnabled && (
-            <Text style={styles.demoModeText}>🧪 Demo Mode Active</Text>
+            <Text className="text-xs text-demo font-semibold">🧪 Demo Mode Active</Text>
           )}
         </View>
       </View>
@@ -898,286 +928,84 @@ export default function App() {
       )}
 
       {/* Control Buttons */}
-      <View style={styles.controlPanel}>
+      <View className="flex-row p-2.5 bg-neutral-100 gap-2.5">
         {demoModeEnabled ? (
           <>
             <TouchableOpacity
-              style={[styles.button, isSimulating ? styles.stopButton : styles.startButton]}
+              className={`flex-1 py-3.5 rounded-xl items-center ${isSimulating ? 'bg-danger' : 'bg-success'}`}
               onPress={isSimulating ? stopDemoSimulation : startDemoSimulation}
             >
-              <Text style={styles.buttonText}>
+              <Text className="text-white text-base font-semibold">
                 {isSimulating ? '⏸ Pause Demo' : '▶ Start Demo'}
               </Text>
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={[styles.button, styles.clearButton]}
+              className="flex-1 py-3.5 rounded-xl items-center bg-warning"
               onPress={resetDemoSimulation}
             >
-              <Text style={styles.buttonText}>↺ Reset</Text>
+              <Text className="text-white text-base font-semibold">↺ Reset</Text>
             </TouchableOpacity>
           </>
         ) : (
           <>
             <TouchableOpacity
-              style={[styles.button, isTracking ? styles.stopButton : styles.startButton]}
+              className={`flex-1 py-3.5 rounded-xl items-center ${isTracking ? 'bg-danger' : 'bg-success'}`}
               onPress={isTracking ? stopTracking : startTracking}
             >
-              <Text style={styles.buttonText}>
+              <Text className="text-white text-base font-semibold">
                 {isTracking ? 'Stop Tracking' : 'Start Tracking'}
               </Text>
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={[styles.button, styles.clearButton]}
+              className="flex-1 py-3.5 rounded-xl items-center bg-warning"
               onPress={clearData}
               disabled={dataPoints.length === 0}
             >
-              <Text style={styles.buttonText}>Clear Data</Text>
+              <Text className="text-white text-base font-semibold">Clear Data</Text>
             </TouchableOpacity>
           </>
         )}
       </View>
 
       {/* Gradient Legend */}
-      <View style={styles.legend}>
-        <Text style={styles.legendTitle}>Network Speed (Mbps)</Text>
-        <View style={styles.gradientLegendBar}>
+      <View className="bg-white p-4 border-t border-neutral-200">
+        <Text className="text-sm font-semibold text-gray-700 mb-2 text-center">Network Speed (Mbps)</Text>
+        <View className="flex-row h-4 rounded-lg overflow-hidden mb-1">
           {Array.from({ length: 30 }).map((_, i) => (
             <View 
               key={i} 
-              style={[
-                styles.gradientLegendSegment, 
-                { backgroundColor: getSpeedColor((i / 29) * 100, 1) }
-              ]} 
+              style={[styles.gradientLegendSegment, { backgroundColor: getSpeedColor((i / 29) * 100, 1) }]} 
             />
           ))}
         </View>
-        <View style={styles.legendLabels}>
-          <Text style={styles.legendLabelText}>0</Text>
-          <Text style={styles.legendLabelText}>25</Text>
-          <Text style={styles.legendLabelText}>50</Text>
-          <Text style={styles.legendLabelText}>75</Text>
-          <Text style={styles.legendLabelText}>100+</Text>
+        <View className="flex-row justify-between px-0.5 mb-1">
+          <Text className="text-xs text-gray-500">0</Text>
+          <Text className="text-xs text-gray-500">25</Text>
+          <Text className="text-xs text-gray-500">50</Text>
+          <Text className="text-xs text-gray-500">75</Text>
+          <Text className="text-xs text-gray-500">100+</Text>
         </View>
-        <View style={styles.legendQuality}>
-          <Text style={[styles.qualityText, { color: getSpeedColor(5, 1) }]}>Poor</Text>
-          <Text style={[styles.qualityText, { color: getSpeedColor(25, 1) }]}>Fair</Text>
-          <Text style={[styles.qualityText, { color: getSpeedColor(50, 1) }]}>Good</Text>
-          <Text style={[styles.qualityText, { color: getSpeedColor(80, 1) }]}>Excellent</Text>
+        <View className="flex-row justify-around">
+          <Text className="text-xs font-medium" style={{ color: getSpeedColor(5, 1) }}>Poor</Text>
+          <Text className="text-xs font-medium" style={{ color: getSpeedColor(25, 1) }}>Fair</Text>
+          <Text className="text-xs font-medium" style={{ color: getSpeedColor(50, 1) }}>Good</Text>
+          <Text className="text-xs font-medium" style={{ color: getSpeedColor(80, 1) }}>Excellent</Text>
         </View>
       </View>
     </View>
   );
 }
 
+// Minimal styles for dynamic values that can't be expressed in Tailwind
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#FF3B30',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  retryButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  map: {
-    width: width,
-    height: height * 0.5,
-  },
-  infoPanel: {
-    backgroundColor: '#fff',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
-  },
-  speedContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  speedIndicatorContainer: {
-    marginRight: 15,
-  },
-  speedIndicatorOuter: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  speedIndicatorMiddle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  speedIndicatorInner: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  speedInfo: {
-    flex: 1,
-  },
-  speedValue: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  speedUnit: {
-    fontSize: 16,
-    fontWeight: 'normal',
-    color: '#666',
-  },
-  speedLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  networkType: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 2,
-  },
-  miniGradientContainer: {
-    marginTop: 12,
-    marginBottom: 8,
-    position: 'relative',
-  },
-  miniGradientBar: {
-    flexDirection: 'row',
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
   miniGradientSegment: {
     flex: 1,
     height: '100%',
   },
-  speedMarker: {
-    position: 'absolute',
-    top: -3,
-    width: 4,
-    height: 14,
-    backgroundColor: '#000',
-    borderRadius: 2,
-    borderWidth: 1,
-    borderColor: '#fff',
-    marginLeft: -2,
-  },
-  statsContainer: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5E5',
-  },
-  statsText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  demoModeText: {
-    fontSize: 12,
-    color: '#4caf50',
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  controlPanel: {
-    flexDirection: 'row',
-    padding: 10,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'space-around',
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    marginHorizontal: 5,
-    alignItems: 'center',
-  },
-  startButton: {
-    backgroundColor: '#34C759',
-  },
-  stopButton: {
-    backgroundColor: '#FF3B30',
-  },
-  clearButton: {
-    backgroundColor: '#FF9500',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  legend: {
-    backgroundColor: '#fff',
-    padding: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5E5',
-  },
-  legendTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  gradientLegendBar: {
-    flexDirection: 'row',
-    height: 16,
-    borderRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
-  },
   gradientLegendSegment: {
     flex: 1,
     height: '100%',
-  },
-  legendLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-    paddingHorizontal: 2,
-  },
-  legendLabelText: {
-    fontSize: 10,
-    color: '#999',
-  },
-  legendQuality: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 8,
-  },
-  qualityText: {
-    fontSize: 11,
-    fontWeight: '600',
   },
 });

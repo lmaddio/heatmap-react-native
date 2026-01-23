@@ -1,11 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import NetInfo from '@react-native-community/netinfo';
+import NetInfo, { NetInfoState, NetInfoStateType } from '@react-native-community/netinfo';
+import type {
+  UseNetworkSpeedOptions,
+  UseNetworkSpeedReturn,
+  NetworkType,
+  CellularGeneration,
+} from '../types';
+
+interface TestEndpoint {
+  url: string;
+  method: string;
+}
 
 /**
  * Multiple test endpoints to avoid 429/409 rate limiting
  * Using various reliable endpoints that respond quickly
  */
-const TEST_ENDPOINTS = [
+const TEST_ENDPOINTS: TestEndpoint[] = [
   { url: 'https://www.google.com/generate_204', method: 'GET' },
   { url: 'https://www.gstatic.com/generate_204', method: 'GET' },
   { url: 'https://connectivitycheck.gstatic.com/generate_204', method: 'GET' },
@@ -24,7 +35,7 @@ let currentEndpointIndex = 0;
 /**
  * Get next test endpoint (round-robin to distribute requests)
  */
-const getNextEndpoint = () => {
+const getNextEndpoint = (): TestEndpoint => {
   const endpoint = TEST_ENDPOINTS[currentEndpointIndex];
   currentEndpointIndex = (currentEndpointIndex + 1) % TEST_ENDPOINTS.length;
   return endpoint;
@@ -33,7 +44,7 @@ const getNextEndpoint = () => {
 /**
  * Network speed estimation based on connection type
  */
-const estimateSpeedFromConnection = (netInfoState) => {
+const estimateSpeedFromConnection = (netInfoState: NetInfoState): number => {
   if (!netInfoState.isConnected) {
     return 0;
   }
@@ -44,12 +55,13 @@ const estimateSpeedFromConnection = (netInfoState) => {
   switch (type) {
     case 'wifi':
       baseSpeed = 50;
-      if (details && details.strength) {
+      // details.strength is available on some platforms
+      if (details && 'strength' in details && typeof details.strength === 'number') {
         baseSpeed = (details.strength / 100) * 100;
       }
       break;
     case 'cellular':
-      if (details && details.cellularGeneration) {
+      if (details && 'cellularGeneration' in details && details.cellularGeneration) {
         switch (details.cellularGeneration) {
           case '5g':
             baseSpeed = 100;
@@ -88,7 +100,7 @@ const estimateSpeedFromConnection = (netInfoState) => {
 /**
  * Perform a latency-based speed test using rotating endpoints
  */
-const performLatencyTest = async () => {
+const performLatencyTest = async (): Promise<number | null> => {
   const endpoint = getNextEndpoint();
   
   try {
@@ -96,7 +108,7 @@ const performLatencyTest = async () => {
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
     
     const startTime = Date.now();
-    const response = await fetch(endpoint.url, {
+    await fetch(endpoint.url, {
       method: endpoint.method,
       cache: 'no-cache',
       mode: 'no-cors', // Avoid CORS issues
@@ -119,7 +131,8 @@ const performLatencyTest = async () => {
     return 1;
   } catch (error) {
     // If one endpoint fails, it will automatically use another next time
-    console.log(`Speed test failed for ${endpoint.url}:`, error.message);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.log(`Speed test failed for ${endpoint.url}:`, errorMessage);
     return null;
   }
 };
@@ -127,7 +140,7 @@ const performLatencyTest = async () => {
 /**
  * Perform multiple parallel latency tests for more accurate results
  */
-const performMultiLatencyTest = async () => {
+const performMultiLatencyTest = async (): Promise<number | null> => {
   // Test 3 different endpoints simultaneously
   const tests = [
     performLatencyTest(),
@@ -138,8 +151,10 @@ const performMultiLatencyTest = async () => {
   try {
     const results = await Promise.allSettled(tests);
     const validResults = results
-      .filter(r => r.status === 'fulfilled' && r.value !== null)
-      .map(r => r.value);
+      .filter((r): r is PromiseFulfilledResult<number | null> => 
+        r.status === 'fulfilled' && r.value !== null
+      )
+      .map(r => r.value as number);
     
     if (validResults.length === 0) return null;
     
@@ -147,46 +162,35 @@ const performMultiLatencyTest = async () => {
     validResults.sort((a, b) => a - b);
     const medianIndex = Math.floor(validResults.length / 2);
     return validResults[medianIndex];
-  } catch (error) {
+  } catch {
     return null;
   }
 };
 
 /**
- * Perform a download-based speed test
+ * Convert NetInfo type to our NetworkType
  */
-const performDownloadTest = async (testUrl, testSizeBytes) => {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    const startTime = Date.now();
-    const response = await fetch(testUrl, { 
-      cache: 'no-cache',
-      signal: controller.signal,
-    });
-    const data = await response.blob();
-    clearTimeout(timeoutId);
-    
-    const endTime = Date.now();
-    const durationSeconds = (endTime - startTime) / 1000;
-    const sizeInBits = (data.size || testSizeBytes) * 8;
-    const speedMbps = (sizeInBits / durationSeconds) / 1000000;
-
-    return speedMbps;
-  } catch (error) {
-    return null;
+const convertNetworkType = (type: NetInfoStateType): NetworkType => {
+  switch (type) {
+    case 'wifi':
+      return 'wifi';
+    case 'cellular':
+      return 'cellular';
+    case 'ethernet':
+      return 'ethernet';
+    case 'bluetooth':
+      return 'bluetooth';
+    case 'none':
+      return 'none';
+    default:
+      return 'unknown';
   }
 };
 
 /**
  * Custom hook for network speed monitoring
- * @param {Object} options - Configuration options
- * @param {boolean} options.enableSpeedTest - Enable actual speed tests
- * @param {number} options.testInterval - Interval between speed tests (ms)
- * @param {boolean} options.useMultiTest - Use multiple parallel tests for accuracy
  */
-export const useNetworkSpeed = (options = {}) => {
+export const useNetworkSpeed = (options: UseNetworkSpeedOptions = {}): UseNetworkSpeedReturn => {
   const {
     enableSpeedTest = true,
     testInterval = 1000,
@@ -194,23 +198,23 @@ export const useNetworkSpeed = (options = {}) => {
   } = options;
 
   const [speed, setSpeed] = useState(0);
-  const [networkType, setNetworkType] = useState('unknown');
+  const [networkType, setNetworkType] = useState<NetworkType>('unknown');
   const [isConnected, setIsConnected] = useState(true);
-  const [cellularGeneration, setCellularGeneration] = useState(null);
+  const [cellularGeneration, setCellularGeneration] = useState<CellularGeneration>(null);
   const [isTesting, setIsTesting] = useState(false);
   
-  const subscriptionRef = useRef(null);
-  const testIntervalRef = useRef(null);
+  const subscriptionRef = useRef<(() => void) | null>(null);
+  const testIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Measure network speed
-  const measureSpeed = useCallback(async (doSpeedTest = false) => {
+  const measureSpeed = useCallback(async (doSpeedTest: boolean = false): Promise<number> => {
     try {
       const netInfo = await NetInfo.fetch();
-      setNetworkType(netInfo.type);
-      setIsConnected(netInfo.isConnected);
+      setNetworkType(convertNetworkType(netInfo.type));
+      setIsConnected(netInfo.isConnected ?? false);
       
-      if (netInfo.details && netInfo.details.cellularGeneration) {
-        setCellularGeneration(netInfo.details.cellularGeneration);
+      if (netInfo.details && 'cellularGeneration' in netInfo.details) {
+        setCellularGeneration(netInfo.details.cellularGeneration as CellularGeneration);
       }
 
       let estimatedSpeed = estimateSpeedFromConnection(netInfo);
@@ -240,14 +244,14 @@ export const useNetworkSpeed = (options = {}) => {
   }, [useMultiTest]);
 
   // Start monitoring network changes
-  const startMonitoring = useCallback(() => {
+  const startMonitoring = useCallback((): void => {
     // Subscribe to network state changes
-    subscriptionRef.current = NetInfo.addEventListener(async (state) => {
-      setNetworkType(state.type);
-      setIsConnected(state.isConnected);
+    subscriptionRef.current = NetInfo.addEventListener((state) => {
+      setNetworkType(convertNetworkType(state.type));
+      setIsConnected(state.isConnected ?? false);
       
-      if (state.details && state.details.cellularGeneration) {
-        setCellularGeneration(state.details.cellularGeneration);
+      if (state.details && 'cellularGeneration' in state.details) {
+        setCellularGeneration(state.details.cellularGeneration as CellularGeneration);
       }
 
       const estimatedSpeed = estimateSpeedFromConnection(state);
@@ -263,7 +267,7 @@ export const useNetworkSpeed = (options = {}) => {
   }, [enableSpeedTest, measureSpeed, testInterval]);
 
   // Stop monitoring
-  const stopMonitoring = useCallback(() => {
+  const stopMonitoring = useCallback((): void => {
     if (subscriptionRef.current) {
       subscriptionRef.current();
       subscriptionRef.current = null;
@@ -282,6 +286,7 @@ export const useNetworkSpeed = (options = {}) => {
     return () => {
       stopMonitoring();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

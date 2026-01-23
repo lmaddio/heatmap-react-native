@@ -7,3 +7,4 @@ export { default as CanvasHeatmap } from './CanvasHeatmap';
 export { default as SettingsModal } from './SettingsModal';
 export { default as DemoModePanel } from './DemoModePanel';
 export { MapView, Circle, Polyline, Marker } from './MapComponents';
+export { LogoutIcon, SignalIcon, MapIcon } from './Icons';
